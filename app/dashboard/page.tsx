@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { useSession } from 'next-auth/react'
+import React, { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Tabs } from '@/components/ui/Tabs'
 import { ChatInterface } from '@/components/features/chat/ChatInterface'
 import { QuestBoard } from '@/components/features/quests/QuestBoard'
@@ -9,10 +9,10 @@ import { BossBattle } from '@/components/features/boss/BossBattle'
 import { AvatarDisplay } from '@/components/features/avatar/AvatarDisplay'
 import { Header } from '@/components/features/layout/Header'
 import { ChatMessage, Quest, User, Boss, BossProgress } from '@/types'
-import Image from 'next/image'
 
 export default function DashboardPage() {
-  const { data: session } = useSession()
+  const router = useRouter()
+
   const [activeTab, setActiveTab] = useState('chat')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [quests, setQuests] = useState<Quest[]>([])
@@ -20,6 +20,7 @@ export default function DashboardPage() {
   const [bossProgress, setBossProgress] = useState<BossProgress | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const [isStreaming, setIsStreaming] = useState(false)
+  const [authChecked, setAuthChecked] = useState(false)
 
   const tabs = [
     { id: 'chat', label: 'Guild Master', icon: '💬' },
@@ -27,28 +28,40 @@ export default function DashboardPage() {
     { id: 'boss', label: 'Boss Battle', icon: '🐉' },
   ]
 
-  // Fetch initial data
+  // ---------- AUTH GUARD (Cookie wird von Middleware geprüft, hier nur User-Daten laden) ----------
   useEffect(() => {
-    if (session?.user) {
-      fetchUserData()
-      fetchQuests()
-      fetchBossData()
-      initializeChat()
-    }
-  }, [session])
+    const run = async () => {
+      try {
+        // Cookie wird automatisch mitgesendet (credentials: 'include' ist default für same-origin)
+        const res = await fetch('/api/auth/me', {
+          method: 'GET',
+          credentials: 'include', // Wichtig: Cookie wird mitgesendet
+        })
 
-  const fetchUserData = async () => {
-    try {
-      const response = await fetch('/api/user')
-      if (response.ok) {
-        const data = await response.json()
-        setUser(data)
+        const data = await res.json().catch(() => ({}))
+
+        if (!res.ok || !data?.ok || !data?.user) {
+          // Middleware wird den User automatisch zu /login redirecten
+          return
+        }
+
+        setUser(data.user as User)
+        setAuthChecked(true)
+
+        // After auth is confirmed, load initial data
+        initializeChat()
+        fetchQuests()
+        fetchBossData()
+      } catch (e) {
+        // on any unexpected error -> middleware will handle redirect
+        console.error('Auth check failed:', e)
       }
-    } catch (error) {
-      console.error('Error fetching user data:', error)
     }
-  }
 
+    run()
+  }, [router])
+
+  // ---------- DATA LOADERS ----------
   const fetchQuests = async () => {
     try {
       const response = await fetch('/api/quests')
@@ -84,6 +97,7 @@ export default function DashboardPage() {
     setMessages([welcomeMessage])
   }
 
+  // ---------- CHAT SEND ----------
   const handleSendMessage = async (message: string) => {
     // Add user message
     const userMessage: ChatMessage = {
@@ -93,18 +107,15 @@ export default function DashboardPage() {
       timestamp: new Date(),
     }
     setMessages((prev) => [...prev, userMessage])
-
     setIsStreaming(true)
 
     try {
       const response = await fetch('/api/orchestrator', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message,
-          userId: session?.user?.id,
+          userId: user?.id, // IMPORTANT: comes from /auth/me
         }),
       })
 
@@ -123,7 +134,6 @@ export default function DashboardPage() {
       }
       setMessages((prev) => [...prev, guildMessage])
 
-      // Refresh quests if they were updated
       if (data.questsUpdated) {
         fetchQuests()
       }
@@ -141,25 +151,28 @@ export default function DashboardPage() {
     }
   }
 
-  // Mock user data if not loaded
+  // ---------- RENDER GUARD ----------
+  if (!authChecked) {
+    // Prevent flicker + avoids calling APIs while auth is not confirmed
+    return null
+  }
+
+  // ---------- DISPLAY USER FALLBACK ----------
   const displayUser: User = user || {
-    id: session?.user?.id || '1',
-    name: session?.user?.name || 'Hero',
-    email: session?.user?.email || '',
+    id: '1',
+    name: 'Hero',
+    email: '',
     role: 'Member',
     stage: 1,
     xp_current: 250,
     family_id: '1',
   }
 
+  // ---------- UI ----------
   return (
     <div className="space-y-8">
-      
       <div className="flex items-center justify-between">
-        <Header
-          title="The Guild Hall"
-          subtitle="The Guild Master awaits your command, Strategist."
-        /> 
+        <Header title="The Guild Hall" subtitle="The Guild Master awaits your command, Strategist." />
         <div className="hidden lg:block">
           <AvatarDisplay user={displayUser} size="md" />
         </div>
@@ -170,21 +183,13 @@ export default function DashboardPage() {
       <div className="fade-in">
         {activeTab === 'chat' && (
           <div className="h-[600px]">
-            <ChatInterface
-              messages={messages}
-              onSendMessage={handleSendMessage}
-              isStreaming={isStreaming}
-            />
+            <ChatInterface messages={messages} onSendMessage={handleSendMessage} isStreaming={isStreaming} />
           </div>
         )}
 
-        {activeTab === 'quests' && (
-          <QuestBoard quests={quests} />
-        )}
+        {activeTab === 'quests' && <QuestBoard quests={quests} />}
 
-        {activeTab === 'boss' && boss && bossProgress && (
-          <BossBattle boss={boss} progress={bossProgress} />
-        )}
+        {activeTab === 'boss' && boss && bossProgress && <BossBattle boss={boss} progress={bossProgress} />}
 
         {activeTab === 'boss' && !boss && (
           <div className="text-center py-12">
@@ -195,4 +200,3 @@ export default function DashboardPage() {
     </div>
   )
 }
-

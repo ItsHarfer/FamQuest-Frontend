@@ -36,7 +36,7 @@ export default function LandingPage() {
               Enter the realm where families unite to defeat entropy. The Guild Master beckons.
             </Typography>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link href="/login">
+              <Link href="/dashboard">
                 <Button variant="primary" size="lg" className="w-full sm:w-auto">
                   Enter the Realm
                 </Button>
