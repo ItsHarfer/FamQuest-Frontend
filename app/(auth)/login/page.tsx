@@ -20,32 +20,33 @@ export default function LoginPage() {
     e.preventDefault()
     setError('')
     setIsLoading(true)
-
+  
     try {
-      // Login über n8n
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // ✅ wichtig für Cookie-Auth
         body: JSON.stringify({ email, password }),
       })
-
+  
       const data = await response.json()
-
-      if (!response.ok || !data.success) {
+  
+      // ✅ akzeptiere beide mögliche Success-Flags
+      const isOk = response.ok && (data.ok === true || data.success === true)
+  
+      if (!isOk) {
         setError(data.error || data.message || 'The mists have clouded the connection. Please check your credentials.')
+        setIsLoading(false)
         return
       }
-
-      // Store token in localStorage for now (can be improved with httpOnly cookies later)
-      if (data.token) {
-        localStorage.setItem('auth_token', data.token)
-        if (data.expiresAt) {
-          localStorage.setItem('auth_token_expires', data.expiresAt)
-        }
-      }
-
-      // Redirect to dashboard
-      router.push('/dashboard')
+  
+      // ✅ Cookie wurde serverseitig gesetzt -> Client muss nix speichern
+      const params = new URLSearchParams(window.location.search)
+      const next = params.get('next') || '/dashboard'
+  
+      // Force navigation - use window.location for immediate redirect
+      // This ensures the cookie is sent with the request
+      window.location.href = next
     } catch (err) {
       setError('An unexpected error occurred. Please try again.')
     } finally {
