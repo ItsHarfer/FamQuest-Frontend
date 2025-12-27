@@ -10,9 +10,9 @@ import { callN8nWebhook } from '@/lib/n8n'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { name, email, password } = body
+    const { familyName, name, email, password } = body
 
-    if (!name || !email || !password) {
+    if (!familyName || !name || !email || !password) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
@@ -38,6 +38,7 @@ export async function POST(request: NextRequest) {
     // Forward registration to n8n
     const payload = {
       action: 'register',
+      familyName,
       name,
       email,
       password,

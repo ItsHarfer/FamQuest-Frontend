@@ -12,6 +12,7 @@ import Image from 'next/image'
 export default function RegisterPage() {
   const router = useRouter()
   const [formData, setFormData] = useState({
+    familyName: '',
     name: '',
     email: '',
     password: '',
@@ -41,6 +42,7 @@ export default function RegisterPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          familyName: formData.familyName,
           name: formData.name,
           email: formData.email,
           password: formData.password,
@@ -96,6 +98,15 @@ export default function RegisterPage() {
                 </Typography>
               </div>
             )}
+            <Input
+              label="Family Name"
+              type="text"
+              value={formData.familyName}
+              onChange={(e) => setFormData({ ...formData, familyName: e.target.value })}
+              required
+              placeholder="e.g. Müller"
+              disabled={isLoading}
+            />  
 
             <Input
               label="Name"
