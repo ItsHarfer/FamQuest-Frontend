@@ -111,10 +111,45 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Handle n8n response format
+    // n8n can return either an object or an array with error objects
+    let responseData = data
+    
+    // If response is an array, check for errors
+    if (Array.isArray(data) && data.length > 0) {
+      const firstItem = data[0]
+      if (firstItem.ok === false) {
+        return NextResponse.json(
+          { 
+            error: firstItem.message || 'Registration failed',
+            code: firstItem.code || 'REGISTRATION_ERROR'
+          },
+          { status: 400 }
+        )
+      }
+      // If array but ok is true, use first item
+      responseData = firstItem
+    }
+
+    // Check if registration was successful
+    if (responseData.ok === false) {
+      return NextResponse.json(
+        { 
+          error: responseData.message || 'Registration failed',
+          code: responseData.code || 'REGISTRATION_ERROR'
+        },
+        { status: 400 }
+      )
+    }
+
+    // Successful registration
     return NextResponse.json({
       success: true,
-      user: data.user,
-      message: data.message,
+      ok: true,
+      user: responseData.user,
+      message: responseData.message,
+      token: responseData.token, // If n8n returns a token
+      expiresAt: responseData.expiresAt, // If n8n returns expiration
     })
   } catch (error) {
     console.error('Registration error:', error)

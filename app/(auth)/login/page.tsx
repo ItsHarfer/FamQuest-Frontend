@@ -31,13 +31,20 @@ export default function LoginPage() {
 
       const data = await response.json()
 
-      if (!response.ok) {
-        setError(data.error || 'The mists have clouded the connection. Please check your credentials.')
+      if (!response.ok || !data.success) {
+        setError(data.error || data.message || 'The mists have clouded the connection. Please check your credentials.')
         return
       }
 
-      // Session wird über n8n verwaltet
-      // TODO: Session-Token speichern und verwenden
+      // Store token in localStorage for now (can be improved with httpOnly cookies later)
+      if (data.token) {
+        localStorage.setItem('auth_token', data.token)
+        if (data.expiresAt) {
+          localStorage.setItem('auth_token_expires', data.expiresAt)
+        }
+      }
+
+      // Redirect to dashboard
       router.push('/dashboard')
     } catch (err) {
       setError('An unexpected error occurred. Please try again.')

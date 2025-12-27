@@ -51,13 +51,25 @@ export default function RegisterPage() {
 
       const data = await response.json()
 
-      if (!response.ok) {
-        setError(data.error || 'Registration failed. Please try again.')
+      if (!response.ok || !data.success) {
+        setError(data.error || data.message || 'Registration failed. Please try again.')
         return
       }
 
-      // Auto-login after registration
-      router.push('/login?registered=true')
+      // Store token if provided
+      if (data.token) {
+        localStorage.setItem('auth_token', data.token)
+        if (data.expiresAt) {
+          localStorage.setItem('auth_token_expires', data.expiresAt)
+        }
+      }
+
+      // Auto-login after registration or redirect to login
+      if (data.token) {
+        router.push('/dashboard')
+      } else {
+        router.push('/login?registered=true')
+      }
     } catch (err) {
       setError('An unexpected error occurred. Please try again.')
     } finally {

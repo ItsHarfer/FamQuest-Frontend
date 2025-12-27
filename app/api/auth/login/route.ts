@@ -105,18 +105,44 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!data.success) {
+    // Handle n8n response format
+    // n8n can return either an object or an array with error objects
+    let responseData = data
+    
+    // If response is an array, check for errors
+    if (Array.isArray(data) && data.length > 0) {
+      const firstItem = data[0]
+      if (firstItem.ok === false) {
+        return NextResponse.json(
+          { 
+            error: firstItem.message || 'Invalid credentials',
+            code: firstItem.code || 'AUTH_ERROR'
+          },
+          { status: 401 }
+        )
+      }
+      // If array but ok is true, use first item
+      responseData = firstItem
+    }
+
+    // Check if login was successful
+    if (responseData.ok !== true) {
       return NextResponse.json(
-        { error: data.error || 'Invalid credentials' },
+        { 
+          error: responseData.message || 'Invalid credentials',
+          code: responseData.code || 'AUTH_ERROR'
+        },
         { status: 401 }
       )
     }
 
-    // TODO: Session-Token von n8n speichern (Cookie, etc.)
+    // Successful login - return token and expiration
     return NextResponse.json({
       success: true,
-      user: data.user,
-      token: data.token, // Falls n8n einen Token zurückgibt
+      ok: true,
+      token: responseData.token,
+      expiresAt: responseData.expiresAt,
+      action: responseData.action,
     })
   } catch (error) {
     console.error('Login error:', error)
