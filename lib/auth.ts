@@ -1,37 +1,17 @@
-/**
- * NextAuth Configuration
- * 
- * Hinweis: Authentifizierung wird später über n8n geregelt.
- * Diese Konfiguration ist ein Platzhalter für die zukünftige Integration.
- */
+// lib/auth.ts
+import { cookies } from 'next/headers'
+import { callN8nWebhook } from '@/lib/n8n'
 
-import { NextAuthOptions } from 'next-auth'
+export async function getUserFromCookie() {
+  const token = cookies().get('famquest_token')?.value
+  if (!token) return null
 
-export const authOptions: NextAuthOptions = {
-  providers: [
-    // Auth Provider werden später über n8n integriert
-  ],
-  pages: {
-    signIn: '/login',
-    signOut: '/',
-  },
-  callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
-        token.id = user.id
-        token.role = (user as any).role
-      }
-      return token
-    },
-    async session({ session, token }) {
-      if (session.user) {
-        session.user.id = token.id as string
-        session.user.role = token.role as string
-      }
-      return session
-    },
-  },
-  session: {
-    strategy: 'jwt',
-  },
+  const meUrl = process.env.N8N_AUTH_ME_WEBHOOK_URL
+  if (!meUrl) throw new Error('N8N_AUTH_ME_WEBHOOK_URL not configured')
+
+  const res = await callN8nWebhook(meUrl, { token })
+  if (!res.ok) return null
+
+  const data = await res.json()
+  return data?.user ?? null
 }

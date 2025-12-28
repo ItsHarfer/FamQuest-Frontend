@@ -1,12 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { callN8nWebhook } from '@/lib/n8n'
 
-/**
- * Get Quests
- * 
- * Holt Quests über n8n.
- * Session-Validierung läuft in n8n.
- */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
@@ -16,36 +10,31 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'User ID required' }, { status: 400 })
     }
 
-    const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL
-
-    if (!n8nWebhookUrl) {
-      return NextResponse.json(
-        { error: 'n8n webhook URL not configured' },
-        { status: 500 }
-      )
+    const webhookUrl = process.env.N8N_QUEST_URL
+    if (!webhookUrl) {
+      return NextResponse.json({ error: 'N8N_QUEST_URL not configured' }, { status: 500 })
     }
 
-    // Fetch quests from n8n
     const payload = {
       action: 'getQuests',
       userId,
       timestamp: new Date().toISOString(),
     }
 
-    const response = await callN8nWebhook(n8nWebhookUrl, payload)
+    const res = await callN8nWebhook(webhookUrl, payload)
+    const text = await res.text()
 
-    if (!response.ok) {
-      throw new Error(`n8n webhook failed: ${response.statusText}`)
+    if (!res.ok) {
+      return NextResponse.json(
+        { error: 'n8n quest webhook failed', status: res.status, details: text },
+        { status: 502 }
+      )
     }
 
-    const data = await response.json()
-
-    return NextResponse.json(data.quests || [])
-  } catch (error) {
-    console.error('Error fetching quests:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch quests' },
-      { status: 500 }
-    )
+    const data = text ? JSON.parse(text) : {}
+    return NextResponse.json(data)
+  } catch (e) {
+    console.error('GET /api/quests error:', e)
+    return NextResponse.json({ error: 'Failed to fetch quests' }, { status: 500 })
   }
 }

@@ -1,8 +1,7 @@
 'use client'
 
-import { SessionProvider as NextAuthSessionProvider } from 'next-auth/react'
-
 export default function Providers({ children }: { children: React.ReactNode }) {
-  return <NextAuthSessionProvider>{children}</NextAuthSessionProvider>
+  // SessionProvider removed - authentication is now handled via n8n and cookies
+  return <>{children}</>
 }
 
