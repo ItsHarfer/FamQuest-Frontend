@@ -3,7 +3,6 @@
 import React, { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { signOut } from 'next-auth/react'
 import { Typography } from '@/components/ui/Typography'
 import { Button } from '@/components/ui/Button'
 import Image from 'next/image'
@@ -11,6 +10,7 @@ import Image from 'next/image'
 export const Navigation: React.FC = () => {
   const pathname = usePathname()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
 
   const navItems = [
     { href: '/dashboard', label: 'Dashboard' },
@@ -20,7 +20,28 @@ export const Navigation: React.FC = () => {
   const isActive = (href: string) => pathname === href
 
   const handleSignOut = async () => {
-    await signOut({ callbackUrl: '/' })
+    if (isLoggingOut) return
+    
+    setIsLoggingOut(true)
+    
+    try {
+      // Call logout API which will call n8n and delete the cookie
+      const response = await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include', // Important: send cookie with request
+      })
+
+      const data = await response.json()
+
+      // Redirect to home page regardless of response (logout should always succeed)
+      window.location.href = '/'
+    } catch (error) {
+      console.error('Logout error:', error)
+      // Even on error, redirect to home page
+      window.location.href = '/'
+    } finally {
+      setIsLoggingOut(false)
+    }
   }
 
   return (
@@ -52,8 +73,8 @@ export const Navigation: React.FC = () => {
                 </Typography>
               </Link>
             ))}
-            <Button variant="ghost" size="sm" onClick={handleSignOut}>
-              Sign Out
+            <Button variant="ghost" size="sm" onClick={handleSignOut} disabled={isLoggingOut}>
+              {isLoggingOut ? 'Signing Out...' : 'Sign Out'}
             </Button>
           </div>
 
@@ -104,8 +125,8 @@ export const Navigation: React.FC = () => {
                 {item.label}
               </Link>
             ))}
-            <Button variant="ghost" size="sm" className="w-full mt-4" onClick={handleSignOut}>
-              Sign Out
+            <Button variant="ghost" size="sm" className="w-full mt-4" onClick={handleSignOut} disabled={isLoggingOut}>
+              {isLoggingOut ? 'Signing Out...' : 'Sign Out'}
             </Button>
           </div>
         )}
