@@ -242,36 +242,29 @@ const handleSendMessage = async (message: string) => {
             activeQuests={activeQuests}
             counts={questCounts || undefined}
             onAcceptQuest={async (questId: string) => {
+              if (!user?.id) {
+                throw new Error('User not authenticated')
+              }
+
               try {
-                const response = await fetch('/api/quests/assign', {
+                const response = await fetch('/api/quests/accept', {
                   method: 'POST',
                   headers: {
                     'Content-Type': 'application/json',
                   },
                   credentials: 'include',
-                  body: JSON.stringify({ questId }),
+                  body: JSON.stringify({ questId, userId: user.id }),
                 })
 
                 const data = await response.json()
 
-                if (!response.ok) {
-                  let errorMessage = 'Failed to accept quest'
-                  if (data.code === 'QUEST_NOT_AVAILABLE') {
-                    errorMessage = 'This quest is no longer available'
-                  } else if (data.code === 'NOT_ALLOWED') {
-                    errorMessage = 'You are not allowed to assign this quest'
-                  } else if (data.code === 'NOT_FOUND') {
-                    errorMessage = 'Quest not found'
-                  } else if (data.error) {
-                    errorMessage = data.error
-                  }
+                if (!response.ok || !data.ok) {
+                  const errorMessage = data.message || 'Failed to accept quest'
                   throw new Error(errorMessage)
                 }
 
-                // Refresh quests after successful assignment
-                if (user?.id) {
-                  await fetchQuests(user.id)
-                }
+                // Refresh quests after successful acceptance (backend is source of truth)
+                await fetchQuests(user.id)
               } catch (err) {
                 console.error('Error accepting quest:', err)
                 throw err
