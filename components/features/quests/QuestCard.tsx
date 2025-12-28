@@ -11,7 +11,25 @@ interface QuestCardProps {
   isAvailable?: boolean
   isActive?: boolean
   onAccept?: (questId: string) => Promise<void>
-  onToggleMicrostep?: (microStepId: string, done: boolean) => Promise<void>
+  onToggleMicrostep?: (
+    questId: string,
+    microStepId: string,
+    done: boolean
+  ) => Promise<{
+    ok: boolean
+    code: number
+    questId: string
+    microstep: {
+      id: string
+      status: 'DONE' | 'OPEN' | 'SKIPPED'
+      done: boolean
+      updatedAt: string
+    }
+    open_steps: number
+    total_steps: number
+    questCompleted: boolean
+    questStatus: string
+  }>
   isAssigning?: boolean
 }
 
@@ -23,7 +41,7 @@ const categoryColors: Record<string, { bg: string; text: string; icon?: string }
 }
 
 export const QuestCard: React.FC<QuestCardProps> = ({
-  quest,
+  quest: initialQuest,
   isAvailable = false,
   isActive = false,
   onAccept,
@@ -31,14 +49,23 @@ export const QuestCard: React.FC<QuestCardProps> = ({
   isAssigning = false,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false)
+  const [quest, setQuest] = useState(initialQuest)
+  const [togglingMicrosteps, setTogglingMicrosteps] = useState<Set<string>>(new Set())
   const categoryInfo = categoryColors[quest.category.toUpperCase()] || categoryColors.PERSONAL
   const totalSteps = quest.microSteps?.length || 0
   const doneSteps = quest.microSteps?.filter((step) => step.done || step.status === 'DONE').length || 0
+  const progressPercentage = totalSteps > 0 ? (doneSteps / totalSteps) * 100 : 0
+  const isCompleted = quest.status === 'COMPLETED'
 
   // Sort microSteps by order_index
   const sortedMicroSteps = [...(quest.microSteps || [])].sort(
     (a, b) => a.order_index - b.order_index
   )
+
+  // Update quest when prop changes
+  React.useEffect(() => {
+    setQuest(initialQuest)
+  }, [initialQuest])
 
   const handleAccept = async () => {
     if (onAccept && !isAssigning) {
@@ -51,8 +78,48 @@ export const QuestCard: React.FC<QuestCardProps> = ({
   }
 
   const handleMicrostepToggle = async (microStepId: string, currentDone: boolean) => {
-    if (onToggleMicrostep) {
-      await onToggleMicrostep(microStepId, !currentDone)
+    if (!onToggleMicrostep || togglingMicrosteps.has(microStepId) || isCompleted) {
+      return
+    }
+
+    // Disable this microstep while toggling
+    setTogglingMicrosteps((prev) => new Set(prev).add(microStepId))
+
+    try {
+      const response = await onToggleMicrostep(quest.id, microStepId, !currentDone)
+
+      if (response.ok) {
+        // Update microstep in local state
+        setQuest((prevQuest) => {
+          const updatedMicroSteps = prevQuest.microSteps?.map((step) =>
+            step.id === microStepId
+              ? {
+                  ...step,
+                  done: response.microstep.done,
+                  status: response.microstep.status as 'OPEN' | 'DONE' | 'SKIPPED',
+                }
+              : step
+          ) || []
+
+          // Update quest status if completed
+          const newStatus = response.questCompleted ? 'COMPLETED' : prevQuest.status
+
+          return {
+            ...prevQuest,
+            microSteps: updatedMicroSteps,
+            status: newStatus as any,
+          }
+        })
+      }
+    } catch (error) {
+      console.error('Error toggling microstep:', error)
+      // Optionally show error toast here
+    } finally {
+      setTogglingMicrosteps((prev) => {
+        const next = new Set(prev)
+        next.delete(microStepId)
+        return next
+      })
     }
   }
 
@@ -66,7 +133,9 @@ export const QuestCard: React.FC<QuestCardProps> = ({
     <Card
       variant="bordered"
       className={`transition-all duration-300 ${
-        isActive
+        isCompleted
+          ? 'border-success-glow hover:border-success-glow border-opacity-60'
+          : isActive
           ? 'border-soft-cyan hover:border-soft-cyan border-opacity-60'
           : isAvailable
           ? 'border-warm-copper hover:border-ancient-gold border-opacity-40'
@@ -85,6 +154,11 @@ export const QuestCard: React.FC<QuestCardProps> = ({
               <span className="text-xs px-2 py-0.5 rounded bg-deep-teal text-gray-300 border border-deep-teal">
                 {quest.quest_type === 'DAILY_RITUAL' ? 'Ritual' : 'Quest'}
               </span>
+              {isCompleted && (
+                <span className="text-xs px-2 py-0.5 rounded bg-success-glow bg-opacity-20 text-success-glow border border-success-glow font-semibold">
+                  Completed
+                </span>
+              )}
               {quest.is_secret && <span className="text-arcane-violet text-sm">🔒</span>}
             </div>
             <Typography variant="body" as="h3" className="font-semibold text-white mb-1">
@@ -106,13 +180,24 @@ export const QuestCard: React.FC<QuestCardProps> = ({
           </div>
         </div>
 
-        {/* Progress Line: X / Y steps */}
+        {/* Progress Line: X / Y steps with progress bar */}
         {totalSteps > 0 && (
-          <div className="flex items-center justify-between text-sm pt-2 border-t border-deep-teal border-opacity-30">
-            <span className="text-gray-400">Progress</span>
-            <span className="text-soft-cyan font-semibold">
-              {doneSteps} / {totalSteps} steps
-            </span>
+          <div className="space-y-2 pt-2 border-t border-deep-teal border-opacity-30">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-400">Progress</span>
+              <span className="text-soft-cyan font-semibold">
+                {doneSteps} / {totalSteps} steps
+              </span>
+            </div>
+            {/* Progress Bar */}
+            <div className="w-full bg-deep-teal bg-opacity-30 rounded-full h-2 overflow-hidden">
+              <div
+                className={`h-full transition-all duration-300 ${
+                  isCompleted ? 'bg-success-glow' : 'bg-soft-cyan'
+                }`}
+                style={{ width: `${progressPercentage}%` }}
+              />
+            </div>
           </div>
         )}
 
@@ -155,6 +240,7 @@ export const QuestCard: React.FC<QuestCardProps> = ({
               size="md"
               className="w-full"
               onClick={handleToggleExpand}
+              disabled={isCompleted}
             >
               {isExpanded ? 'Hide Details' : 'Details'}
             </Button>
@@ -173,17 +259,23 @@ export const QuestCard: React.FC<QuestCardProps> = ({
                 className="flex items-center justify-between p-2 rounded bg-deep-teal bg-opacity-20 hover:bg-opacity-30 transition-colors"
               >
                 <div className="flex items-center space-x-2 flex-1">
-                  {isActive && onToggleMicrostep ? (
+                  {isActive && onToggleMicrostep && !isCompleted ? (
                     <input
                       type="checkbox"
                       checked={step.done || step.status === 'DONE'}
                       onChange={() => handleMicrostepToggle(step.id, step.done || step.status === 'DONE')}
-                      className="w-4 h-4 rounded border-deep-teal bg-midnight text-ancient-gold focus:ring-ancient-gold focus:ring-2"
+                      disabled={togglingMicrosteps.has(step.id)}
+                      className="w-4 h-4 rounded border-deep-teal bg-midnight text-ancient-gold focus:ring-ancient-gold focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     />
                   ) : (
                     <span className="text-lg">{getMicrostepStatusIcon(step)}</span>
                   )}
-                  <Typography variant="caption" className="text-white flex-1">
+                  <Typography 
+                    variant="caption" 
+                    className={`flex-1 ${
+                      togglingMicrosteps.has(step.id) ? 'opacity-50' : 'text-white'
+                    }`}
+                  >
                     {step.title}
                   </Typography>
                 </div>

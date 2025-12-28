@@ -10,7 +10,25 @@ interface QuestBoardProps {
   availableQuests: Quest[]
   activeQuests: Quest[]
   onAcceptQuest: (questId: string) => Promise<void>
-  onToggleMicrostep?: (microStepId: string, done: boolean) => Promise<void>
+  onToggleMicrostep?: (
+    questId: string,
+    microStepId: string,
+    done: boolean
+  ) => Promise<{
+    ok: boolean
+    code: number
+    questId: string
+    microstep: {
+      id: string
+      status: 'DONE' | 'OPEN' | 'SKIPPED'
+      done: boolean
+      updatedAt: string
+    }
+    open_steps: number
+    total_steps: number
+    questCompleted: boolean
+    questStatus: string
+  }>
   counts?: {
     available: number
     active: number

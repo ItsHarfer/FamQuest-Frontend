@@ -277,11 +277,49 @@ const handleSendMessage = async (message: string) => {
                 throw err
               }
             }}
-            onToggleMicrostep={async (microStepId: string, done: boolean) => {
-              // Stub handler - TODO: implement backend update
-              console.log('Toggle microstep:', { microStepId, done })
-              // TODO: Call API to update microstep status
-              // For now, just log it
+            onToggleMicrostep={async (questId: string, microStepId: string, done: boolean) => {
+              if (!user?.id) {
+                throw new Error('User not authenticated')
+              }
+
+              const { toggleMicrostep } = await import('@/lib/api')
+              const response = await toggleMicrostep(user.id, questId, microStepId)
+
+              // Update local state optimistically
+              setActiveQuests((prev) =>
+                prev.map((q) => {
+                  if (q.id !== questId) return q
+
+                  const updatedMicroSteps = q.microSteps?.map((ms) =>
+                    ms.id === microStepId
+                      ? {
+                          ...ms,
+                          done: response.microstep.done,
+                          status: response.microstep.status as 'OPEN' | 'DONE' | 'SKIPPED',
+                        }
+                      : ms
+                  ) || []
+
+                  return {
+                    ...q,
+                    microSteps: updatedMicroSteps,
+                    status: response.questCompleted ? ('COMPLETED' as any) : q.status,
+                  }
+                })
+              )
+
+              // If quest completed, show notification and refresh
+              if (response.questCompleted) {
+                // Show toast notification (you can add a toast library later)
+                console.log('Quest completed!', questId)
+                
+                // Refresh quests to get updated state from server
+                if (user.id) {
+                  await fetchQuests(user.id)
+                }
+              }
+
+              return response
             }}
           />
         )}

@@ -44,3 +44,39 @@ export type ApiError = {
       return { raw: text }
     }
   }
+
+  /**
+   * Toggle Microstep
+   * 
+   * Toggles a microstep's done status via the API.
+   */
+  export async function toggleMicrostep(
+    userId: string,
+    questId: string,
+    microstepId: string
+  ): Promise<{
+    ok: boolean
+    code: number
+    questId: string
+    microstep: {
+      id: string
+      status: 'DONE' | 'OPEN' | 'SKIPPED'
+      done: boolean
+      updatedAt: string
+    }
+    open_steps: number
+    total_steps: number
+    questCompleted: boolean
+    questStatus: string
+  }> {
+    return apiFetch('/api/microsteps/toggle', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'toggleMicrostep',
+        userId,
+        questId,
+        microstepId,
+        timestamp: new Date().toISOString(),
+      }),
+    })
+  }
