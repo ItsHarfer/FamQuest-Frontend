@@ -24,9 +24,22 @@ export interface User {
   family_id: string
 }
 
+export interface MicroStep {
+  id: string
+  title: string
+  status: 'OPEN' | 'DONE' | 'SKIPPED' | string
+  done: boolean
+  order_index: number
+  estimated_minutes?: number | null
+  xp_value: number
+  createdAt: string
+  updatedAt: string
+}
+
 export interface Quest {
   id: string
   title: string
+  description?: string | null
   category: string // Household, Health, Learning
   status: QuestStatus
   verification_type: VerificationType
@@ -34,9 +47,13 @@ export interface Quest {
   bonus_xp: number
   assigned_to?: string | null
   xp_value: number
-  due_date?: Date | null
+  due_date?: string | null
   is_secret: boolean
   quest_type: QuestType // QUEST or DAILY_RITUAL
+  family_id: string
+  created_at: string
+  updated_at: string
+  microSteps: MicroStep[]
 }
 
 export interface Family {

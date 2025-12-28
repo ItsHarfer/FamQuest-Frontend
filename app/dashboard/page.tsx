@@ -9,13 +9,20 @@ import { BossBattle } from '@/components/features/boss/BossBattle'
 import { AvatarDisplay } from '@/components/features/avatar/AvatarDisplay'
 import { Header } from '@/components/features/layout/Header'
 import { ChatMessage, Quest, User, Boss, BossProgress } from '@/types'
+import { apiFetch } from '@/lib/api'
 
 export default function DashboardPage() {
   const router = useRouter()
 
   const [activeTab, setActiveTab] = useState('chat')
   const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [quests, setQuests] = useState<Quest[]>([])
+  const [availableQuests, setAvailableQuests] = useState<Quest[]>([])
+  const [activeQuests, setActiveQuests] = useState<Quest[]>([])
+  const [questCounts, setQuestCounts] = useState<{
+    available: number
+    active: number
+    total: number
+  } | null>(null)
   const [boss, setBoss] = useState<Boss | null>(null)
   const [bossProgress, setBossProgress] = useState<BossProgress | null>(null)
   const [user, setUser] = useState<User | null>(null)
@@ -45,12 +52,12 @@ export default function DashboardPage() {
           return
         }
 
-        setUser(data.user as User)
+        const u = data.user as User
+        setUser(u)
         setAuthChecked(true)
 
-        // After auth is confirmed, load initial data
         initializeChat()
-        fetchQuests()
+        fetchQuests(u.id)  
         fetchBossData()
       } catch (e) {
         // on any unexpected error -> middleware will handle redirect
@@ -62,28 +69,68 @@ export default function DashboardPage() {
   }, [router])
 
   // ---------- DATA LOADERS ----------
-  const fetchQuests = async () => {
+  const fetchUserData = async () => {
     try {
-      const response = await fetch('/api/quests')
-      if (response.ok) {
-        const data = await response.json()
-        setQuests(data)
-      }
-    } catch (error) {
-      console.error('Error fetching quests:', error)
+      const data = await apiFetch<User>('/api/user')
+      setUser(data)
+    } catch (e) {
+      console.error('Error fetching user data:', e)
     }
   }
-
+  
+  const fetchQuests = async (userId?: string) => {
+    try {
+      const uid = userId ?? user?.id
+      if (!uid) return
+  
+      const data = await apiFetch<{
+        ok?: boolean
+        availableQuests?: Quest[]
+        activeQuests?: Quest[]
+        counts?: {
+          available: number
+          active: number
+          total: number
+        }
+      }>(`/api/quests?userId=${encodeURIComponent(uid)}`)
+  
+      // Handle new API response structure
+      if (data?.ok && data.availableQuests && data.activeQuests) {
+        setAvailableQuests(data.availableQuests)
+        setActiveQuests(data.activeQuests)
+        if (data.counts) {
+          setQuestCounts(data.counts)
+        }
+      } else if (Array.isArray(data)) {
+        // Fallback: if API returns array, split by assigned_to
+        const available = (data as Quest[]).filter((q) => !q.assigned_to)
+        const active = (data as Quest[]).filter((q) => q.assigned_to === uid)
+        setAvailableQuests(available)
+        setActiveQuests(active)
+        setQuestCounts({
+          available: available.length,
+          active: active.length,
+          total: (data as Quest[]).length,
+        })
+      } else {
+        setAvailableQuests([])
+        setActiveQuests([])
+        setQuestCounts(null)
+      }
+    } catch (e) {
+      console.error('Error fetching quests:', e)
+      setAvailableQuests([])
+      setActiveQuests([])
+    }
+  }
+  
   const fetchBossData = async () => {
     try {
-      const response = await fetch('/api/boss')
-      if (response.ok) {
-        const data = await response.json()
-        setBoss(data.boss)
-        setBossProgress(data.progress)
-      }
-    } catch (error) {
-      console.error('Error fetching boss data:', error)
+      const data = await apiFetch<{ boss: Boss; progress: BossProgress }>('/api/boss')
+      setBoss(data.boss)
+      setBossProgress(data.progress)
+    } catch (e) {
+      console.error('Error fetching boss data:', e)
     }
   }
 
@@ -96,60 +143,62 @@ export default function DashboardPage() {
     }
     setMessages([welcomeMessage])
   }
-
+ 
   // ---------- CHAT SEND ----------
-  const handleSendMessage = async (message: string) => {
-    // Add user message
-    const userMessage: ChatMessage = {
-      id: Date.now().toString(),
-      content: message,
-      role: 'user',
-      timestamp: new Date(),
-    }
-    setMessages((prev) => [...prev, userMessage])
-    setIsStreaming(true)
+const handleSendMessage = async (message: string) => {
+  // Add user message
+  const userMessage: ChatMessage = {
+    id: Date.now().toString(),
+    content: message,
+    role: 'user',
+    timestamp: new Date(),
+  }
+  setMessages((prev) => [...prev, userMessage])
+  setIsStreaming(true)
 
-    try {
-      const response = await fetch('/api/orchestrator', {
+  try {
+    if (!user?.id) {
+      throw new Error('Not authenticated (missing user id)')
+    }
+
+    const data = await apiFetch<{ message?: string; questsUpdated?: boolean }>(
+      '/api/orchestrator',
+      {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message,
-          userId: user?.id, // IMPORTANT: comes from /auth/me
+          userId: user.id, // IMPORTANT: comes from /api/auth/me -> /api/user
         }),
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to send message')
       }
+    )
 
-      const data = await response.json()
-
-      // Add guild master response
-      const guildMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        content: data.message || 'The Guild Master acknowledges your request.',
-        role: 'guild-master',
-        timestamp: new Date(),
-      }
-      setMessages((prev) => [...prev, guildMessage])
-
-      if (data.questsUpdated) {
-        fetchQuests()
-      }
-    } catch (error) {
-      console.error('Error sending message:', error)
-      const errorMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        content: 'The mists have clouded the connection. Please try again.',
-        role: 'guild-master',
-        timestamp: new Date(),
-      }
-      setMessages((prev) => [...prev, errorMessage])
-    } finally {
-      setIsStreaming(false)
+    // Add guild master response
+    const guildMessage: ChatMessage = {
+      id: (Date.now() + 1).toString(),
+      content: data.message || 'The Guild Master acknowledges your request.',
+      role: 'guild-master',
+      timestamp: new Date(),
     }
+    setMessages((prev) => [...prev, guildMessage])
+
+    // Refresh quests if they were updated
+    if (data.questsUpdated) {
+      fetchQuests()
+    }
+  } catch (error) {
+    console.error('Error sending message:', error)
+
+    const errorMessage: ChatMessage = {
+      id: (Date.now() + 1).toString(),
+      content: 'The mists have clouded the connection. Please try again.',
+      role: 'guild-master',
+      timestamp: new Date(),
+    }
+    setMessages((prev) => [...prev, errorMessage])
+  } finally {
+    setIsStreaming(false)
   }
+}
 
   // ---------- RENDER GUARD ----------
   if (!authChecked) {
@@ -187,7 +236,55 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {activeTab === 'quests' && <QuestBoard quests={quests} />}
+        {activeTab === 'quests' && (
+          <QuestBoard
+            availableQuests={availableQuests}
+            activeQuests={activeQuests}
+            counts={questCounts || undefined}
+            onAcceptQuest={async (questId: string) => {
+              try {
+                const response = await fetch('/api/quests/assign', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  credentials: 'include',
+                  body: JSON.stringify({ questId }),
+                })
+
+                const data = await response.json()
+
+                if (!response.ok) {
+                  let errorMessage = 'Failed to accept quest'
+                  if (data.code === 'QUEST_NOT_AVAILABLE') {
+                    errorMessage = 'This quest is no longer available'
+                  } else if (data.code === 'NOT_ALLOWED') {
+                    errorMessage = 'You are not allowed to assign this quest'
+                  } else if (data.code === 'NOT_FOUND') {
+                    errorMessage = 'Quest not found'
+                  } else if (data.error) {
+                    errorMessage = data.error
+                  }
+                  throw new Error(errorMessage)
+                }
+
+                // Refresh quests after successful assignment
+                if (user?.id) {
+                  await fetchQuests(user.id)
+                }
+              } catch (err) {
+                console.error('Error accepting quest:', err)
+                throw err
+              }
+            }}
+            onToggleMicrostep={async (microStepId: string, done: boolean) => {
+              // Stub handler - TODO: implement backend update
+              console.log('Toggle microstep:', { microStepId, done })
+              // TODO: Call API to update microstep status
+              // For now, just log it
+            }}
+          />
+        )}
 
         {activeTab === 'boss' && boss && bossProgress && <BossBattle boss={boss} progress={bossProgress} />}
 

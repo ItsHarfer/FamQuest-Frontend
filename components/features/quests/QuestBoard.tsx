@@ -1,127 +1,123 @@
 'use client'
 
-import React from 'react'
-import { QuestItem } from './QuestItem'
+import React, { useState } from 'react'
+import { QuestCard } from './QuestCard'
 import { Quest } from '@/types'
 import { Typography } from '@/components/ui/Typography'
 import { Card } from '@/components/ui/Card'
 
 interface QuestBoardProps {
-  quests: Quest[]
-  onQuestClick?: (quest: Quest) => void
+  availableQuests: Quest[]
+  activeQuests: Quest[]
+  onAcceptQuest: (questId: string) => Promise<void>
+  onToggleMicrostep?: (microStepId: string, done: boolean) => Promise<void>
+  counts?: {
+    available: number
+    active: number
+    total: number
+  }
 }
 
 export const QuestBoard: React.FC<QuestBoardProps> = ({
-  quests,
-  onQuestClick,
+  availableQuests = [],
+  activeQuests = [],
+  onAcceptQuest,
+  onToggleMicrostep,
+  counts,
 }) => {
-  const dailyRituals = quests.filter((q) => q.quest_type === 'DAILY_RITUAL')
-  const regularQuests = quests.filter((q) => q.quest_type === 'QUEST')
-  
-  const openQuests = regularQuests.filter((q) => q.status === 'OPEN' || q.status === 'ASSIGNED')
-  const completedQuests = regularQuests.filter((q) => q.status === 'COMPLETED')
-  const pendingQuests = regularQuests.filter((q) => q.status === 'PENDING_VERIFICATION')
+  const [assigningQuestId, setAssigningQuestId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  const openRituals = dailyRituals.filter((q) => q.status === 'OPEN' || q.status === 'ASSIGNED')
-  const completedRituals = dailyRituals.filter((q) => q.status === 'COMPLETED')
+  const handleAcceptQuest = async (questId: string) => {
+    setAssigningQuestId(questId)
+    setError(null)
+
+    try {
+      await onAcceptQuest(questId)
+    } catch (err) {
+      console.error('Error accepting quest:', err)
+      setError('Failed to accept quest. Please try again.')
+    } finally {
+      setAssigningQuestId(null)
+    }
+  }
 
   return (
-    <div className="space-y-6">
-      <Typography variant="heading" as="h2">
-        Quest Board
-      </Typography>
-
-      {/* Daily Rituals Section */}
-      {dailyRituals.length > 0 && (
-        <div>
-          <Typography variant="body" className="text-arcane-violet mb-3 font-semibold flex items-center">
-            <span className="mr-2">✨</span>
-            Daily Rituals
+    <div className="space-y-8">
+      {error && (
+        <div className="px-4 py-2 bg-danger-rune bg-opacity-20 border border-danger-rune rounded-lg">
+          <Typography variant="caption" className="text-danger-rune">
+            {error}
           </Typography>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {openRituals.map((ritual) => (
-              <QuestItem
-                key={ritual.id}
-                quest={ritual}
-                onClick={() => onQuestClick?.(ritual)}
-                isRitual={true}
-              />
-            ))}
-            {completedRituals.slice(0, 3).map((ritual) => (
-              <QuestItem
-                key={ritual.id}
-                quest={ritual}
-                onClick={() => onQuestClick?.(ritual)}
-                isRitual={true}
-              />
-            ))}
-          </div>
         </div>
       )}
 
-      {/* Active Quests */}
-      {openQuests.length > 0 && (
-        <div>
-          <Typography variant="body" className="text-soft-cyan mb-3 font-semibold">
+      {/* Active Quests Section */}
+      <div className="space-y-4">
+        <div className="flex items-center space-x-2">
+          <Typography variant="heading" as="h3" className="text-soft-cyan">
             Active Quests
           </Typography>
+          {counts && (
+            <span className="text-gray-400 text-sm">({counts.active})</span>
+          )}
+        </div>
+
+        {activeQuests.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {openQuests.map((quest) => (
-              <QuestItem
+            {activeQuests.map((quest) => (
+              <QuestCard
                 key={quest.id}
                 quest={quest}
-                onClick={() => onQuestClick?.(quest)}
+                isActive={true}
+                onToggleMicrostep={onToggleMicrostep}
               />
             ))}
           </div>
-        </div>
-      )}
+        ) : (
+          <Card variant="bordered" className="border-deep-teal border-opacity-40">
+            <div className="text-center py-6">
+              <Typography variant="body" className="text-gray-400">
+                No active quests. Accept one below.
+              </Typography>
+            </div>
+          </Card>
+        )}
+      </div>
 
-      {/* Pending Verification */}
-      {pendingQuests.length > 0 && (
-        <div>
-          <Typography variant="body" className="text-warning-ember mb-3 font-semibold">
-            Awaiting Verification
+      {/* Available Quests Section */}
+      <div className="space-y-4">
+        <div className="flex items-center space-x-2">
+          <Typography variant="heading" as="h3" className="text-warm-copper">
+            Available Quests
           </Typography>
+          {counts && (
+            <span className="text-gray-400 text-sm">({counts.available})</span>
+          )}
+        </div>
+
+        {availableQuests.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {pendingQuests.map((quest) => (
-              <QuestItem
+            {availableQuests.map((quest) => (
+              <QuestCard
                 key={quest.id}
                 quest={quest}
-                onClick={() => onQuestClick?.(quest)}
+                isAvailable={true}
+                onAccept={handleAcceptQuest}
+                isAssigning={assigningQuestId === quest.id}
               />
             ))}
           </div>
-        </div>
-      )}
-
-      {/* Completed Quests */}
-      {completedQuests.length > 0 && (
-        <div>
-          <Typography variant="body" className="text-success-glow mb-3 font-semibold">
-            Completed Quests
-          </Typography>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {completedQuests.slice(0, 6).map((quest) => (
-              <QuestItem
-                key={quest.id}
-                quest={quest}
-                onClick={() => onQuestClick?.(quest)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {quests.length === 0 && (
-        <Card>
-          <div className="text-center py-8">
-            <Typography variant="body" className="text-gray-400">
-              The Quest Board is empty. The Guild Master awaits your command.
-            </Typography>
-          </div>
-        </Card>
-      )}
+        ) : (
+          <Card variant="bordered" className="border-deep-teal border-opacity-40">
+            <div className="text-center py-6">
+              <Typography variant="body" className="text-gray-400">
+                No available quests right now.
+              </Typography>
+            </div>
+          </Card>
+        )}
+      </div>
     </div>
   )
 }

@@ -11,8 +11,7 @@ FamQuest is a web application that transforms household chores, personal goals, 
 - **Framework**: Next.js 14 (App Router)
 - **Styling**: Tailwind CSS
 - **Language**: TypeScript
-- **Authentication**: NextAuth.js
-- **Database**: PostgreSQL (via Prisma)
+- **Authentication**: n8n (via webhooks and cookies)
 - **Backend Logic**: n8n (via API integration)
 - **Animations**: Framer Motion
 
@@ -43,16 +42,16 @@ Create a `.env` file in the root directory with:
 ```env
 # n8n Integration
 N8N_WEBHOOK_URL="https://your-n8n-instance.com/webhook/orchestrator"
-
-# NextAuth (optional, für zukünftige Integration)
-NEXTAUTH_URL="http://localhost:3000"
-NEXTAUTH_SECRET="your-secret-key-here"
+N8N_AUTH_REGISTER_LOGIN_URL="https://your-n8n-instance.com/webhook/auth-login"
+N8N_AUTH_LOGOUT_URL="http://localhost:5678/webhook/auth-logout"
+N8N_AUTH_ME_WEBHOOK_URL="https://your-n8n-instance.com/webhook/auth-me"
 ```
 
 **Hinweis:** 
 - Alle Datenbankoperationen und Authentifizierung laufen über n8n
 - Das Frontend kommuniziert nur über API-Routen mit n8n
 - Keine direkte Datenbankverbindung im Frontend erforderlich
+- Authentifizierung erfolgt über Cookies (Token wird serverseitig gesetzt)
 
 4. Run the development server:
 ```bash
@@ -115,8 +114,10 @@ famquest-app/
 
 ## API Routes
 
-- `/api/auth/[...nextauth]` - NextAuth authentication
-- `/api/auth/register` - User registration
+- `/api/auth/login` - User login (forwards to n8n)
+- `/api/auth/register` - User registration (forwards to n8n)
+- `/api/auth/logout` - User logout (forwards to n8n, deletes cookie)
+- `/api/auth/me` - Get current user data (validates token from cookie)
 - `/api/orchestrator` - Bridge to n8n webhook
 - `/api/user` - Get current user data
 - `/api/quests` - Get user's quests
