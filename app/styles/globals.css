@@ -103,3 +103,23 @@ body {
   animation: fadeIn 0.5s ease-out;
 }
 
+/* XP Gain Animation */
+@keyframes xpGain {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 0) scale(0.5);
+  }
+  20% {
+    opacity: 1;
+    transform: translate(-50%, -10px) scale(1.2);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -30px) scale(1);
+  }
+}
+
+.animate-xp-gain {
+  animation: xpGain 2s ease-out forwards;
+}
+
