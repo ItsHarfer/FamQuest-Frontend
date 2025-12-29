@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/Card'
 interface QuestBoardProps {
   availableQuests: Quest[]
   activeQuests: Quest[]
+  completedQuests?: Quest[]
   onAcceptQuest: (questId: string) => Promise<void>
   onToggleMicrostep?: (
     questId: string,
@@ -39,6 +40,7 @@ interface QuestBoardProps {
 export const QuestBoard: React.FC<QuestBoardProps> = ({
   availableQuests = [],
   activeQuests = [],
+  completedQuests = [],
   onAcceptQuest,
   onToggleMicrostep,
   counts,
@@ -136,6 +138,28 @@ export const QuestBoard: React.FC<QuestBoardProps> = ({
           </Card>
         )}
       </div>
+
+      {/* Completed Quests Section */}
+      {completedQuests.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center space-x-2">
+            <Typography variant="heading" as="h3" className="text-success-glow">
+              Completed Quests
+            </Typography>
+            <span className="text-gray-400 text-sm">({completedQuests.length})</span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {completedQuests.map((quest) => (
+              <QuestCard
+                key={quest.id}
+                quest={quest}
+                isActive={false}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

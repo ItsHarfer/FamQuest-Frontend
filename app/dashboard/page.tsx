@@ -18,6 +18,7 @@ export default function DashboardPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [availableQuests, setAvailableQuests] = useState<Quest[]>([])
   const [activeQuests, setActiveQuests] = useState<Quest[]>([])
+  const [completedQuests, setCompletedQuests] = useState<Quest[]>([])
   const [questCounts, setQuestCounts] = useState<{
     available: number
     active: number
@@ -28,6 +29,7 @@ export default function DashboardPage() {
   const [user, setUser] = useState<User | null>(null)
   const [isStreaming, setIsStreaming] = useState(false)
   const [authChecked, setAuthChecked] = useState(false)
+  const [xpGained, setXpGained] = useState<number | undefined>(undefined)
 
   const tabs = [
     { id: 'chat', label: 'Guild Master', icon: '💬' },
@@ -97,16 +99,23 @@ export default function DashboardPage() {
       // Handle new API response structure
       if (data?.ok && data.availableQuests && data.activeQuests) {
         setAvailableQuests(data.availableQuests)
-        setActiveQuests(data.activeQuests)
+        // Filter active quests (not completed)
+        const active = data.activeQuests.filter((q) => q.status !== 'COMPLETED')
+        const completed = data.activeQuests.filter((q) => q.status === 'COMPLETED')
+        setActiveQuests(active)
+        setCompletedQuests(completed)
         if (data.counts) {
           setQuestCounts(data.counts)
         }
       } else if (Array.isArray(data)) {
-        // Fallback: if API returns array, split by assigned_to
+        // Fallback: if API returns array, split by assigned_to and status
         const available = (data as Quest[]).filter((q) => !q.assigned_to)
-        const active = (data as Quest[]).filter((q) => q.assigned_to === uid)
+        const assigned = (data as Quest[]).filter((q) => q.assigned_to === uid)
+        const active = assigned.filter((q) => q.status !== 'COMPLETED')
+        const completed = assigned.filter((q) => q.status === 'COMPLETED')
         setAvailableQuests(available)
         setActiveQuests(active)
+        setCompletedQuests(completed)
         setQuestCounts({
           available: available.length,
           active: active.length,
@@ -115,6 +124,7 @@ export default function DashboardPage() {
       } else {
         setAvailableQuests([])
         setActiveQuests([])
+        setCompletedQuests([])
         setQuestCounts(null)
       }
     } catch (e) {
@@ -223,7 +233,7 @@ const handleSendMessage = async (message: string) => {
       <div className="flex items-center justify-between">
         <Header title="The Guild Hall" subtitle="The Guild Master awaits your command, Strategist." />
         <div className="hidden lg:block">
-          <AvatarDisplay user={displayUser} size="md" />
+          <AvatarDisplay user={displayUser} size="md" xpGained={xpGained} />
         </div>
       </div>
 
@@ -240,6 +250,7 @@ const handleSendMessage = async (message: string) => {
           <QuestBoard
             availableQuests={availableQuests}
             activeQuests={activeQuests}
+            completedQuests={completedQuests}
             counts={questCounts || undefined}
             onAcceptQuest={async (questId: string) => {
               if (!user?.id) {
@@ -278,38 +289,74 @@ const handleSendMessage = async (message: string) => {
               const { toggleMicrostep } = await import('@/lib/api')
               const response = await toggleMicrostep(user.id, questId, microStepId)
 
-              // Update local state optimistically
-              setActiveQuests((prev) =>
-                prev.map((q) => {
-                  if (q.id !== questId) return q
-
-                  const updatedMicroSteps = q.microSteps?.map((ms) =>
-                    ms.id === microStepId
-                      ? {
-                          ...ms,
-                          done: response.microstep.done,
-                          status: response.microstep.status as 'OPEN' | 'DONE' | 'SKIPPED',
-                        }
-                      : ms
-                  ) || []
-
-                  return {
-                    ...q,
-                    microSteps: updatedMicroSteps,
-                    status: response.questCompleted ? ('COMPLETED' as any) : q.status,
-                  }
-                })
-              )
-
-              // If quest completed, show notification and refresh
+              // If quest completed, handle it immediately
               if (response.questCompleted) {
-                // Show toast notification (you can add a toast library later)
-                console.log('Quest completed!', questId)
-                
-                // Refresh quests to get updated state from server
-                if (user.id) {
-                  await fetchQuests(user.id)
+                // Find the completed quest to get XP value BEFORE moving it
+                const completedQuest = activeQuests.find((q) => q.id === questId)
+                if (completedQuest) {
+                  const totalXP = completedQuest.xp_value + (completedQuest.bonus_xp || 0)
+                  
+                  // Update XP optimistically for animation
+                  if (user) {
+                    const newXP = user.xp_current + totalXP
+                    setUser({ ...user, xp_current: newXP })
+                    setXpGained(totalXP)
+                    
+                    // Clear XP gain animation after it finishes
+                    setTimeout(() => {
+                      setXpGained(undefined)
+                    }, 2500)
+                  }
+                  
+                  // Move quest from active to completed
+                  setActiveQuests((prev) => prev.filter((q) => q.id !== questId))
+                  setCompletedQuests((prev) => [
+                    {
+                      ...completedQuest,
+                      status: 'COMPLETED' as any,
+                      microSteps: completedQuest.microSteps?.map((ms) =>
+                        ms.id === microStepId
+                          ? {
+                              ...ms,
+                              done: response.microstep.done,
+                              status: response.microstep.status as 'OPEN' | 'DONE' | 'SKIPPED',
+                            }
+                          : ms
+                      ) || [],
+                    },
+                    ...prev,
+                  ])
                 }
+                
+                // Refresh quests and user data to get updated state from server
+                if (user?.id) {
+                  await fetchQuests(user.id)
+                  // Refresh user data to get updated XP from server
+                  const userData = await apiFetch<User>('/api/user')
+                  setUser(userData)
+                }
+              } else {
+                // Update local state optimistically (quest not completed yet)
+                setActiveQuests((prev) =>
+                  prev.map((q) => {
+                    if (q.id !== questId) return q
+
+                    const updatedMicroSteps = q.microSteps?.map((ms) =>
+                      ms.id === microStepId
+                        ? {
+                            ...ms,
+                            done: response.microstep.done,
+                            status: response.microstep.status as 'OPEN' | 'DONE' | 'SKIPPED',
+                          }
+                        : ms
+                    ) || []
+
+                    return {
+                      ...q,
+                      microSteps: updatedMicroSteps,
+                    }
+                  })
+                )
               }
 
               return response
