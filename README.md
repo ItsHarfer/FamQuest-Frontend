@@ -12,17 +12,16 @@ FamQuest is a web application that transforms household chores, personal goals, 
 - **Styling**: Tailwind CSS
 - **Language**: TypeScript
 - **Authentication**: n8n (via webhooks and cookies)
-- **Backend Logic**: n8n (via API integration)
-- **Animations**: Framer Motion
+- **Backend Logic**: n8n (all database operations and business logic)
+- **Animations**: CSS animations and transitions
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 18+ 
+- Node.js 18+
 - npm or yarn
-- PostgreSQL database
-- n8n instance (for backend logic)
+- n8n instance (for backend logic and database operations)
 
 ### Installation
 
@@ -38,20 +37,27 @@ npm install
 ```
 
 3. Set up environment variables:
-Create a `.env` file in the root directory with:
+Create a `.env.local` file in the root directory with the following n8n webhook URLs:
+
 ```env
-# n8n Integration
-N8N_WEBHOOK_URL="https://your-n8n-instance.com/webhook/orchestrator"
-N8N_AUTH_REGISTER_LOGIN_URL="https://your-n8n-instance.com/webhook/auth-login"
-N8N_AUTH_LOGOUT_URL="http://localhost:5678/webhook/auth-logout"
-N8N_AUTH_ME_WEBHOOK_URL="https://your-n8n-instance.com/webhook/auth-me"
+# n8n Webhook URLs
+N8N_WEBHOOK_URL=http://localhost:5678/webhook/orchestrator
+N8N_GUILDMASTER_URL=http://localhost:5678/webhook/guildmaster
+N8N_GUILDMASTER_INTRO_URL=http://localhost:5678/webhook/guildmaster-intro
+N8N_AUTH_LOGIN_URL=http://localhost:5678/webhook/auth-login
+N8N_AUTH_REGISTER_URL=http://localhost:5678/webhook/auth-register
+N8N_AUTH_LOGOUT_URL=http://localhost:5678/webhook/auth-logout
+N8N_AUTH_ME_WEBHOOK_URL=http://localhost:5678/webhook/auth-me
+N8N_QUEST_ACCEPT_URL=http://localhost:5678/webhook/quest-accept
+N8N_MICROSTEP_TOGGLE_URL=http://localhost:5678/webhook/microstep-toggle
 ```
 
-**Hinweis:** 
-- Alle Datenbankoperationen und Authentifizierung laufen über n8n
-- Das Frontend kommuniziert nur über API-Routen mit n8n
-- Keine direkte Datenbankverbindung im Frontend erforderlich
-- Authentifizierung erfolgt über Cookies (Token wird serverseitig gesetzt)
+**Important Notes:**
+- All database operations and authentication are handled by n8n
+- The frontend communicates with n8n exclusively through API routes
+- No direct database connection is required in the frontend
+- Authentication is handled via cookies (token is set server-side)
+- Update the URLs above to match your n8n instance configuration
 
 4. Run the development server:
 ```bash
@@ -65,15 +71,25 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 ```
 famquest-app/
 ├── app/                    # Next.js App Router
-│   ├── (auth)/            # Auth route group
+│   ├── (auth)/            # Auth route group (login, register)
 │   ├── dashboard/         # Main interface (protected)
-│   ├── api/               # API routes
+│   ├── api/               # API routes (proxies to n8n)
+│   │   ├── auth/         # Authentication endpoints
+│   │   ├── quests/        # Quest management endpoints
+│   │   ├── microsteps/    # Microstep toggle endpoint
+│   │   └── orchestrator/  # Main chat orchestrator
 │   └── layout.tsx         # Root layout
 ├── components/            # React components
-│   ├── ui/               # Base components
-│   ├── features/         # Feature-specific components
-│   └── providers/        # Context providers
+│   ├── ui/               # Base UI components (Button, Card, Tabs, etc.)
+│   └── features/         # Feature-specific components
+│       ├── avatar/       # Avatar display with XP animation
+│       ├── chat/         # Chat interface and bubbles
+│       ├── quests/       # Quest board and quest cards
+│       └── boss/         # Boss battle component
 ├── lib/                  # Utilities & configuration
+│   ├── api.ts           # API fetch utilities
+│   ├── n8n.ts           # n8n webhook client
+│   └── utils.ts          # Helper functions
 ├── types/                # TypeScript definitions
 └── public/              # Static assets
 ```
@@ -83,21 +99,24 @@ famquest-app/
 ### Dashboard Tabs
 
 1. **Guild Master (Chat)**: Interactive chat interface with the AI Guild Master
-   - Real-time streaming responses
-   - Integration with n8n webhook
-   - Quest completion and creation
+   - Real-time responses from n8n webhook
+   - Quest creation and management
+   - XP updates after each response
+   - Intro message on first visit
 
 2. **Quest Board**: View and manage quests
-   - Daily Rituals (marked with ✨)
-   - Active Quests
-   - Completed Quests
-   - Pending Verification
+   - Available Quests (with filter and sort)
+   - Active Quests (with filter and sort)
+   - Completed Quests (collapsible accordion)
+   - Quest cards with microsteps
+   - Accept quest functionality
+   - Microstep toggle functionality
+   - XP gain animations
 
-3. **Boss Battle**: Monthly cooperative challenge
-   - Boss illustration and theme
-   - HP tracking
-   - Requirements and progress
-   - Stage and quest completion tracking
+3. **Boss Battle**: Monthly cooperative challenge (Coming Soon)
+   - Currently disabled
+   - Will display boss illustration and theme
+   - HP tracking and requirements
 
 ## Design System
 
@@ -114,28 +133,47 @@ famquest-app/
 
 ## API Routes
 
-- `/api/auth/login` - User login (forwards to n8n)
-- `/api/auth/register` - User registration (forwards to n8n)
-- `/api/auth/logout` - User logout (forwards to n8n, deletes cookie)
-- `/api/auth/me` - Get current user data (validates token from cookie)
-- `/api/orchestrator` - Bridge to n8n webhook
-- `/api/user` - Get current user data
-- `/api/quests` - Get user's quests
-- `/api/boss` - Get boss battle data
+All API routes act as proxies to n8n webhooks. The frontend never directly accesses the database.
+
+### Authentication
+- `POST /api/auth/login` - User login (forwards to n8n, sets cookie)
+- `POST /api/auth/register` - User registration (forwards to n8n)
+- `POST /api/auth/logout` - User logout (forwards to n8n, deletes cookie)
+- `GET /api/auth/me` - Get current user data (validates token from cookie)
+
+### Quests
+- `GET /api/quests?userId=<id>` - Get user's quests (available, active, completed)
+- `POST /api/quests/accept` - Accept an available quest
+
+### Microsteps
+- `POST /api/microsteps/toggle` - Toggle microstep completion status
+
+### Chat & Orchestration
+- `POST /api/orchestrator` - Main chat endpoint (forwards to n8n Guildmaster webhook)
+- `POST /api/guildmaster/intro` - Get intro message from Guildmaster
+
+### User Data
+- `GET /api/user` - Get current user data
 
 ## n8n Integration
 
-The `/api/orchestrator` endpoint forwards user messages to your n8n webhook. The payload includes:
-- User message
-- User ID, email, name
-- Current stage and XP
-- Family ID
-- Image data (for photo verification)
+The frontend communicates with n8n exclusively through webhooks. All API routes forward requests to n8n and return the responses.
 
-The n8n workflow should return:
-- Guild Master response message
-- Updated quests (if applicable)
-- Quest update flag
+### Request Flow
+
+1. Frontend makes request to Next.js API route
+2. API route extracts authentication token from cookie
+3. API route forwards request to n8n webhook with token
+4. n8n processes request (database operations, business logic)
+5. n8n returns response
+6. API route forwards response to frontend
+
+### Authentication
+
+- Authentication token is stored in a cookie (`famquest_token`)
+- Token is automatically sent with all requests (via `credentials: 'include'`)
+- Token is validated by n8n on each request
+- Middleware protects routes that require authentication
 
 ## Development
 
@@ -152,6 +190,19 @@ npm start
 npm run lint
 ```
 
+## Environment Variables
+
+All n8n webhook URLs should be configured in `.env.local`:
+
+- `N8N_GUILDMASTER_URL` - Main Guildmaster chat webhook
+- `N8N_GUILDMASTER_INTRO_URL` - Intro message webhook
+- `N8N_AUTH_LOGIN_URL` - Login webhook
+- `N8N_AUTH_REGISTER_URL` - Registration webhook
+- `N8N_AUTH_LOGOUT_URL` - Logout webhook
+- `N8N_AUTH_ME_WEBHOOK_URL` - Get current user webhook
+- `N8N_QUEST_ACCEPT_URL` - Accept quest webhook
+- `N8N_MICROSTEP_TOGGLE_URL` - Toggle microstep webhook
+
 ## License
 
 [Your License Here]
@@ -159,4 +210,3 @@ npm run lint
 ## Contributing
 
 [Your Contributing Guidelines Here]
-

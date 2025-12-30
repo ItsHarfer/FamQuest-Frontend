@@ -35,7 +35,7 @@ export default function DashboardPage() {
   const tabs = [
     { id: 'chat', label: 'Guild Master', icon: '💬' },
     { id: 'quests', label: 'Quest Board', icon: '📜' },
-    { id: 'boss', label: 'Boss Battle', icon: '🐉' },
+    { id: 'boss', label: 'Boss Battle', icon: '🐉', disabled: true },
   ]
 
   // ---------- AUTH GUARD (Cookie wird von Middleware geprüft, hier nur User-Daten laden) ----------
@@ -512,11 +512,15 @@ export default function DashboardPage() {
           />
         )}
 
-        {activeTab === 'boss' && boss && bossProgress && <BossBattle boss={boss} progress={bossProgress} />}
-
-        {activeTab === 'boss' && !boss && (
-          <div className="text-center py-12">
-            <p className="text-gray-400">No active boss battle. The Guild Master will announce the next challenge soon.</p>
+        {activeTab === 'boss' && (
+          <div className="text-center py-24">
+            <div className="space-y-4">
+              <div className="text-6xl mb-6">🐉</div>
+              <h2 className="text-2xl font-serif text-ancient-gold mb-2">Coming Soon</h2>
+              <p className="text-gray-400 max-w-md mx-auto">
+                The Boss Battle feature is under development. The Guild Master will announce when it's ready for battle.
+              </p>
+            </div>
           </div>
         )}
       </div>

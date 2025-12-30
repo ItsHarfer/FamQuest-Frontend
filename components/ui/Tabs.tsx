@@ -7,6 +7,7 @@ interface Tab {
   id: string
   label: string
   icon?: string
+  disabled?: boolean
 }
 
 interface TabsProps {
@@ -22,11 +23,14 @@ export const Tabs: React.FC<TabsProps> = ({ tabs, activeTab, onTabChange }) => {
         {tabs.map((tab) => (
           <button
             key={tab.id}
-            onClick={() => onTabChange(tab.id)}
+            onClick={() => !tab.disabled && onTabChange(tab.id)}
+            disabled={tab.disabled}
             className={cn(
               'px-6 py-4 font-sans font-medium text-sm transition-all duration-300',
               'border-b-2 focus:outline-none',
-              activeTab === tab.id
+              tab.disabled
+                ? 'border-transparent text-gray-600 cursor-not-allowed opacity-50'
+                : activeTab === tab.id
                 ? 'border-ancient-gold text-ancient-gold glow-gold'
                 : 'border-transparent text-gray-400 hover:text-soft-cyan hover:border-soft-cyan'
             )}
