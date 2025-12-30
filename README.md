@@ -100,8 +100,7 @@ famquest-app/
 
 1. **Guild Master (Chat)**: Interactive chat interface with the AI Guild Master
    - Real-time responses from n8n webhook
-   - Quest creation and management
-   - XP updates after each response
+   - Quest creation and management 
    - Intro message on first visit
 
 2. **Quest Board**: View and manage quests
