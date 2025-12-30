@@ -67,6 +67,13 @@ export interface ChatMessage {
   content: string
   role: 'user' | 'guild-master'
   timestamp: Date
+  quest?: {
+    id: string
+    title: string
+    xp_value: number
+  }
+  microsteps_preview?: MicroStep[]
+  questCreated?: boolean
 }
 
 export interface Boss {

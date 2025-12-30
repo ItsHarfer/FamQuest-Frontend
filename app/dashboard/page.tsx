@@ -30,6 +30,7 @@ export default function DashboardPage() {
   const [isStreaming, setIsStreaming] = useState(false)
   const [authChecked, setAuthChecked] = useState(false)
   const [xpGained, setXpGained] = useState<number | undefined>(undefined)
+  const [introShown, setIntroShown] = useState(false)
 
   const tabs = [
     { id: 'chat', label: 'Guild Master', icon: '💬' },
@@ -70,13 +71,29 @@ export default function DashboardPage() {
     run()
   }, [router])
 
+  // Fetch intro message when chat tab becomes active for the first time
+  useEffect(() => {
+    if (activeTab === 'chat' && authChecked && user && !introShown && messages.length === 0) {
+      fetchIntroMessage()
+    }
+  }, [activeTab, authChecked, user, introShown, messages.length])
+
+  // Reload quests when quest board tab becomes active
+  useEffect(() => {
+    if (activeTab === 'quests' && authChecked && user?.id) {
+      fetchQuests(user.id)
+    }
+  }, [activeTab, authChecked, user?.id])
+
   // ---------- DATA LOADERS ----------
-  const fetchUserData = async () => {
+  const fetchUserData = async (): Promise<User | null> => {
     try {
       const data = await apiFetch<User>('/api/user')
       setUser(data)
+      return data
     } catch (e) {
       console.error('Error fetching user data:', e)
+      return null
     }
   }
   
@@ -145,70 +162,201 @@ export default function DashboardPage() {
   }
 
   const initializeChat = () => {
-    const welcomeMessage: ChatMessage = {
-      id: '1',
-      content: 'The mists of productivity beckon, Strategist. What task shall we commune with today?',
-      role: 'guild-master',
-      timestamp: new Date(),
+    // Don't set static welcome message - wait for intro from backend
+    setMessages([])
+  }
+
+  // Fetch intro message from Guildmaster when chat tab is first opened
+  const fetchIntroMessage = async () => {
+    // Only fetch if intro hasn't been shown and user is authenticated
+    if (introShown || !user?.id || messages.length > 0) {
+      return
     }
-    setMessages([welcomeMessage])
+
+    try {
+      setIsStreaming(true) // Show loading indicator while waiting for intro
+      
+      // Get client's timezone
+      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+      
+      const data = await apiFetch<{
+        success?: boolean
+        ok?: boolean
+        message?: string
+        error?: string
+      }>('/api/guildmaster/intro', {
+        method: 'POST',
+        body: JSON.stringify({
+          clientState: {
+            localTime: new Date().toISOString(),
+            timeZone: timeZone,
+          },
+        }),
+      })
+
+      if (data.error || data.ok === false) {
+        console.error('Failed to fetch intro message:', data.error)
+        // Show fallback message if intro fails
+        const fallbackMessage: ChatMessage = {
+          id: `intro-fallback-${Date.now()}`,
+          content: 'The mists of productivity beckon, Strategist. What task shall we commune with today?',
+          role: 'guild-master',
+          timestamp: new Date(),
+        }
+        setMessages([fallbackMessage])
+        setIntroShown(true)
+        return
+      }
+
+      if (data.message) {
+        const introMessage: ChatMessage = {
+          id: `intro-${Date.now()}`,
+          content: data.message,
+          role: 'guild-master',
+          timestamp: new Date(),
+        }
+        setMessages([introMessage])
+        setIntroShown(true)
+      }
+    } catch (error) {
+      console.error('Error fetching intro message:', error)
+      // Show fallback message on error
+      const fallbackMessage: ChatMessage = {
+        id: `intro-error-${Date.now()}`,
+        content: 'The mists of productivity beckon, Strategist. What task shall we commune with today?',
+        role: 'guild-master',
+        timestamp: new Date(),
+      }
+      setMessages([fallbackMessage])
+      setIntroShown(true)
+    } finally {
+      setIsStreaming(false)
+    }
   }
  
   // ---------- CHAT SEND ----------
-const handleSendMessage = async (message: string) => {
-  // Add user message
-  const userMessage: ChatMessage = {
-    id: Date.now().toString(),
-    content: message,
-    role: 'user',
-    timestamp: new Date(),
-  }
-  setMessages((prev) => [...prev, userMessage])
-  setIsStreaming(true)
-
-  try {
-    if (!user?.id) {
-      throw new Error('Not authenticated (missing user id)')
+  const handleSendMessage = async (message: string) => {
+    // Mark intro as shown when user sends first message
+    if (!introShown) {
+      setIntroShown(true)
     }
 
-    const data = await apiFetch<{ message?: string; questsUpdated?: boolean }>(
-      '/api/orchestrator',
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          message,
-          userId: user.id, // IMPORTANT: comes from /api/auth/me -> /api/user
-        }),
+    // Add user message immediately
+    const userMessage: ChatMessage = {
+      id: Date.now().toString(),
+      content: message,
+      role: 'user',
+      timestamp: new Date(),
+    }
+    setMessages((prev) => [...prev, userMessage])
+    setIsStreaming(true)
+
+    try {
+      if (!user?.id) {
+        throw new Error('Not authenticated (missing user id)')
       }
-    )
 
-    // Add guild master response
-    const guildMessage: ChatMessage = {
-      id: (Date.now() + 1).toString(),
-      content: data.message || 'The Guild Master acknowledges your request.',
-      role: 'guild-master',
-      timestamp: new Date(),
-    }
-    setMessages((prev) => [...prev, guildMessage])
+      // Send message to n8n Guildmaster webhook via orchestrator
+      const data = await apiFetch<{ 
+        success?: boolean
+        ok?: boolean
+        message?: string
+        assistant_message?: string
+        intent?: string
+        confidence?: number
+        args?: any
+        questsUpdated?: boolean
+        quests?: Quest[]
+        questCreated?: boolean
+        quest?: {
+          id: string
+          title: string
+          xp_value: number
+        }
+        microsteps_preview?: any[]
+        microstepsCreated?: number
+        error?: string
+      }>(
+        '/api/orchestrator',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            message,
+            userId: user.id,
+            userEmail: user.email,
+            userName: user.name,
+          }),
+        }
+      )
 
-    // Refresh quests if they were updated
-    if (data.questsUpdated) {
-      fetchQuests()
-    }
-  } catch (error) {
-    console.error('Error sending message:', error)
+      // Check for errors in response
+      if (data.error || (data.ok === false)) {
+        throw new Error(data.error || 'The Guild Master could not process your request.')
+      }
 
-    const errorMessage: ChatMessage = {
-      id: (Date.now() + 1).toString(),
-      content: 'The mists have clouded the connection. Please try again.',
-      role: 'guild-master',
-      timestamp: new Date(),
+      // Extract assistant message from n8n response
+      // n8n returns assistant_message, API returns it as message
+      const assistantMessage = data.message || data.assistant_message || 'The Guild Master acknowledges your request.'
+
+      // Add guild master response from n8n
+      // Ensure quest title is from quest object, not from microsteps
+      const questData = data.quest ? {
+        id: data.quest.id,
+        title: data.quest.title, // Explicitly use quest.title, not microstep title
+        xp_value: data.quest.xp_value || 0,
+      } : undefined
+
+      const guildMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        content: assistantMessage,
+        role: 'guild-master',
+        timestamp: new Date(),
+        quest: questData,
+        microsteps_preview: data.microsteps_preview,
+        questCreated: data.questCreated,
+      }
+      setMessages((prev) => [...prev, guildMessage])
+
+      // Store previous XP before updating
+      const previousXP = user?.xp_current || 0
+
+      // Refresh user data to update XP display after every chat response
+      const updatedUser = await fetchUserData()
+
+      // Calculate XP gain for animation (if XP increased)
+      if (updatedUser && updatedUser.xp_current > previousXP) {
+        const xpDifference = updatedUser.xp_current - previousXP
+        setXpGained(xpDifference)
+        
+        // Clear XP gain animation after it finishes
+        setTimeout(() => {
+          setXpGained(undefined)
+        }, 2500)
+      }
+
+      // Refresh quests if they were updated or a new quest was created
+      if (data.questsUpdated || data.questCreated) {
+        if (user.id) {
+          await fetchQuests(user.id)
+        }
+      }
+    } catch (error) {
+      console.error('Error sending message to Guild Master:', error)
+
+      // Show error message from Guild Master
+      const errorMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        content: error instanceof Error 
+          ? `The mists have clouded the connection: ${error.message}` 
+          : 'The mists have clouded the connection. Please try again.',
+        role: 'guild-master',
+        timestamp: new Date(),
+      }
+      setMessages((prev) => [...prev, errorMessage])
+    } finally {
+      setIsStreaming(false)
     }
-    setMessages((prev) => [...prev, errorMessage])
-  } finally {
-    setIsStreaming(false)
   }
-}
 
   // ---------- RENDER GUARD ----------
   if (!authChecked) {
