@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { callN8nWebhook } from '@/lib/n8n'
 
 /**
- * Orchestrator Endpoint
+ * Guildmaster Intro Endpoint
  * 
- * Bridge zwischen Frontend und n8n.
- * Alle Datenbankoperationen und Authentifizierung laufen in n8n.
+ * Returns an intro message from the Guildmaster AI.
+ * This is called once when the user first opens the Guildmaster chat.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -19,25 +19,21 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const body = await request.json()
-    const { message, imageData, userId, userEmail, userName } = body
-
-    if (!message) {
-      return NextResponse.json(
-        { error: 'Message is required' },
-        { status: 400 }
-      )
-    }
+    // Get request body for clientState.localTime and timeZone
+    const body = await request.json().catch(() => ({}))
+    const { clientState } = body
+    const localTime = clientState?.localTime || new Date().toISOString()
+    const timeZone = clientState?.timeZone || 'UTC'
 
     // Get n8n webhook URL from environment variables
-    const n8nWebhookUrl = process.env.N8N_GUILDMASTER_URL 
+    const n8nWebhookUrl = process.env.N8N_GUILDMASTER_INTRO_URL
 
     if (!n8nWebhookUrl) {
-      console.error('N8N_GUILDMASTER_URL is not set in environment variables')
+      console.error('N8N_GUILDMASTER_INTRO_URL is not set in environment variables')
       return NextResponse.json(
         { 
           error: 'n8n webhook URL not configured',
-          details: 'Please set N8N_GUILDMASTER_URL in your .env file'
+          details: 'Please set N8N_GUILDMASTER_INTRO_URL in your .env file'
         },
         { status: 500 }
       )
@@ -46,12 +42,12 @@ export async function POST(request: NextRequest) {
     // Prepare payload for n8n
     // Token wird mitgesendet für Authentifizierung in n8n
     const payload = {
-      message,
+      action: 'intro',
       token, // Token aus Cookie für Authentifizierung in n8n
-      userId, // Wird vom Frontend übergeben (kann auch aus Token in n8n validiert werden)
-      userEmail,
-      userName,
-      imageData, // For PHOTO_AI verification
+      clientState: {
+        localTime, // Client's local time
+        timeZone, // Client's timezone (e.g., "Europe/Berlin", "America/New_York")
+      },
       timestamp: new Date().toISOString(),
     }
 
@@ -126,53 +122,46 @@ export async function POST(request: NextRequest) {
       responseData = data[0]
     }
 
-    // Extract assistant_message from n8n response
-    // n8n returns: { ok: true, intent: "...", assistant_message: "...", ... }
-    const assistantMessage = responseData?.assistant_message || responseData?.message
+    // Extract intro message from n8n response
+    // n8n can return different formats:
+    // 1. Simple format: { assistant_message: "...", message: "..." }
+    // 2. Complex format: { output: [{ content: [{ text: "..." }] }] }
+    let introMessage: string | null = null
 
-    // Extract quest creation data if available
-    const questCreated = responseData?.created === true || (responseData?.ok === true && responseData?.quest)
-    
-    // Extract quest data - ensure we use quest.title, not microstep title
-    let quest = undefined
-    if (responseData?.quest) {
-      quest = {
-        id: responseData.quest.id,
-        title: responseData.quest.title || 'Untitled Quest', // Use quest.title explicitly
-        xp_value: responseData.quest.xp_value || 0,
-      }
-      // Debug log to verify we're using the correct title
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[Orchestrator] Quest extracted:', {
-          questTitle: quest.title,
-          questId: quest.id,
-          hasMicrosteps: (responseData?.microsteps_preview || []).length > 0,
-          firstMicrostepTitle: responseData?.microsteps_preview?.[0]?.title,
-        })
+    // Try simple formats first
+    introMessage = responseData?.assistant_message || responseData?.message || responseData?.intro_message
+
+    // Try complex format: output[0].content[0].text
+    if (!introMessage && responseData?.output && Array.isArray(responseData.output) && responseData.output.length > 0) {
+      const firstOutput = responseData.output[0]
+      if (firstOutput?.content && Array.isArray(firstOutput.content) && firstOutput.content.length > 0) {
+        const firstContent = firstOutput.content[0]
+        introMessage = firstContent?.text || null
       }
     }
-    const microstepsPreview = responseData?.microsteps_preview || []
 
-    // Return response from n8n (Guild Master message)
+    if (!introMessage) {
+      console.error('No intro message found in n8n response:', JSON.stringify(responseData, null, 2))
+      return NextResponse.json(
+        { 
+          error: 'No intro message in n8n response',
+          details: 'The n8n workflow did not return an intro message in the expected format.'
+        },
+        { status: 500 }
+      )
+    }
+
+    // Return intro message
     return NextResponse.json({
       success: true,
       ok: responseData?.ok !== false,
-      message: assistantMessage || 'The Guild Master acknowledges your request.',
-      intent: responseData?.intent,
-      confidence: responseData?.confidence,
-      args: responseData?.args,
-      questsUpdated: responseData?.questsUpdated || false,
-      quests: responseData?.quests || [],
-      questCreated: questCreated,
-      quest: quest,
-      microsteps_preview: microstepsPreview,
-      microstepsCreated: responseData?.microstepsCreated,
+      message: introMessage,
     })
   } catch (error) {
-    console.error('Orchestrator error:', error)
+    console.error('Guildmaster intro error:', error)
     return NextResponse.json(
       {
-        error: 'The mists have clouded the connection. Please try again.',
+        error: 'Failed to get intro message',
         details: error instanceof Error ? error.message : 'Unknown error',
       },
       { status: 500 }
